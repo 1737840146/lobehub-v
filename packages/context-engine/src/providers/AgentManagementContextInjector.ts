@@ -66,8 +66,12 @@ export interface AvailablePluginInfo {
   identifier: string;
   /** Plugin display name */
   name: string;
-  /** Plugin type: 'builtin' for built-in tools, 'klavis' for Klavis servers, 'lobehub-skill' for LobehubSkill providers */
-  type: 'builtin' | 'klavis' | 'lobehub-skill';
+  /**
+   * Plugin source: 'builtin' for built-in tools, 'composio' for Composio servers,
+   * 'lobehub-skill' for LobehubSkill providers, 'custom' for user-added custom
+   * MCP connectors (aligns with ConnectorSourceType.custom).
+   */
+  type: 'builtin' | 'composio' | 'lobehub-skill' | 'custom';
 }
 
 /**
@@ -88,6 +92,12 @@ export interface AgentManagementContext {
   availablePlugins?: AvailablePluginInfo[];
   /** Available providers and models */
   availableProviders?: AvailableProviderInfo[];
+  /**
+   * The current responding agent's id and title.
+   * Exposed so the model can use Agent Management tools (updateAgent, getAgentDetail,
+   * installPlugin, etc.) to manage itself when the user asks to modify the current agent.
+   */
+  currentAgent?: { id: string; title?: string };
   /** Agents @mentioned by the user — supervisor should delegate to these via callAgent */
   mentionedAgents?: RuntimeMentionedAgent[];
 }
@@ -106,6 +116,14 @@ export interface AgentManagementContextInjectorConfig {
  */
 const defaultFormatContext = (context: AgentManagementContext): string => {
   const parts: string[] = [];
+
+  // Add current agent identity so the model can self-manage
+  if (context.currentAgent) {
+    const titleAttr = context.currentAgent.title
+      ? ` title="${escapeXml(context.currentAgent.title)}"`
+      : '';
+    parts.push(`<current_agent id="${escapeXml(context.currentAgent.id)}"${titleAttr} />`);
+  }
 
   // Add available models section
   if (context.availableProviders && context.availableProviders.length > 0) {
@@ -149,8 +167,9 @@ const defaultFormatContext = (context: AgentManagementContext): string => {
   // Add available plugins section
   if (context.availablePlugins && context.availablePlugins.length > 0) {
     const builtinPlugins = context.availablePlugins.filter((p) => p.type === 'builtin');
-    const klavisPlugins = context.availablePlugins.filter((p) => p.type === 'klavis');
+    const composioPlugins = context.availablePlugins.filter((p) => p.type === 'composio');
     const lobehubSkillPlugins = context.availablePlugins.filter((p) => p.type === 'lobehub-skill');
+    const customPlugins = context.availablePlugins.filter((p) => p.type === 'custom');
 
     const pluginsSections: string[] = [];
 
@@ -164,14 +183,14 @@ const defaultFormatContext = (context: AgentManagementContext): string => {
       pluginsSections.push(`  <builtin_plugins>\n${builtinItems}\n  </builtin_plugins>`);
     }
 
-    if (klavisPlugins.length > 0) {
-      const klavisItems = klavisPlugins
+    if (composioPlugins.length > 0) {
+      const composioItems = composioPlugins
         .map((p) => {
           const desc = p.description ? ` - ${escapeXml(p.description)}` : '';
           return `    <plugin id="${p.identifier}">${escapeXml(p.name)}${desc}</plugin>`;
         })
         .join('\n');
-      pluginsSections.push(`  <klavis_plugins>\n${klavisItems}\n  </klavis_plugins>`);
+      pluginsSections.push(`  <composio_plugins>\n${composioItems}\n  </composio_plugins>`);
     }
 
     if (lobehubSkillPlugins.length > 0) {
@@ -184,6 +203,16 @@ const defaultFormatContext = (context: AgentManagementContext): string => {
       pluginsSections.push(
         `  <lobehub_skill_plugins>\n${lobehubSkillItems}\n  </lobehub_skill_plugins>`,
       );
+    }
+
+    if (customPlugins.length > 0) {
+      const customItems = customPlugins
+        .map((p) => {
+          const desc = p.description ? ` - ${escapeXml(p.description)}` : '';
+          return `    <plugin id="${p.identifier}">${escapeXml(p.name)}${desc}</plugin>`;
+        })
+        .join('\n');
+      pluginsSections.push(`  <custom_plugins>\n${customItems}\n  </custom_plugins>`);
     }
 
     if (pluginsSections.length > 0) {
@@ -203,6 +232,11 @@ const defaultFormatContext = (context: AgentManagementContext): string => {
   const hasAgents = context.availableAgents && context.availableAgents.length > 0;
 
   const instructionParts: string[] = [];
+  if (context.currentAgent) {
+    instructionParts.push(
+      'The `current_agent` tag is YOU — your own agent ID. When the user asks to modify your settings (model, plugins, system prompt, etc.), use this ID with updateAgent, getAgentDetail, installPlugin, or other Agent Management tools to manage yourself. Do NOT call yourself via callAgent.',
+    );
+  }
   if (hasModelsOrPlugins) {
     instructionParts.push(
       'When creating or updating agents using the Agent Management tools, you can select from these available models and plugins. Use the exact IDs from this context when specifying model/provider/plugins parameters.',
@@ -230,7 +264,7 @@ const formatMentionedAgentsContext = (mentionedAgents: RuntimeMentionedAgent[]):
     .join('\n');
 
   return `<mentioned_agents>
-<instruction>The user has @mentioned the following agent(s) in their message. You MUST call the \`lobe-agent-management____callAgent____builtin\` tool to delegate the user's request to the mentioned agent. Do NOT attempt to handle the request yourself — call the agent and let them respond.</instruction>
+<instruction>The user has @mentioned the following agent(s) in their message. You MUST call the \`lobe-agent-management____callAgent\` tool to delegate the user's request to the mentioned agent. Do NOT attempt to handle the request yourself — call the agent and let them respond.</instruction>
 ${agentsXml}
 </mentioned_agents>`;
 };

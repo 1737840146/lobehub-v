@@ -1,21 +1,12 @@
+import { formatLinearMcpShortLabel } from '@lobechat/builtin-tool-claude-code/client/labels';
 import { type ChatToolPayloadWithResult } from '@lobechat/types';
+import { t } from 'i18next';
 
 import { LOADING_FLAT } from '@/const/message';
 import { type AssistantContentBlock } from '@/types/index';
 
 import {
   DURATION_SECONDS_PER_MINUTE,
-  POST_TOOL_ANSWER_DOUBLE_NEWLINE_SCORE,
-  POST_TOOL_ANSWER_LENGTH_LONG_MIN_CHARS,
-  POST_TOOL_ANSWER_LENGTH_LONG_SCORE,
-  POST_TOOL_ANSWER_LENGTH_MEDIUM_MIN_CHARS,
-  POST_TOOL_ANSWER_MARKDOWN_STRUCTURE_SCORE,
-  POST_TOOL_ANSWER_MEDIUM_TEXT_SCORE,
-  POST_TOOL_ANSWER_MULTI_LINE_MIN_COUNT,
-  POST_TOOL_ANSWER_MULTI_LINE_SCORE,
-  POST_TOOL_ANSWER_PUNCT_MIN_COUNT,
-  POST_TOOL_ANSWER_PUNCT_SCORE,
-  POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD,
   TIME_MS_PER_SECOND,
   TOOL_API_DISPLAY_NAMES,
   TOOL_FIRST_DETAIL_MAX_CHARS,
@@ -36,39 +27,39 @@ export const areWorkflowToolsComplete = (tools: ChatToolPayloadWithResult[]): bo
   return collapsible.every((t) => t.result != null && t.result.content !== LOADING_FLAT);
 };
 
-/** Heuristic: prose-only block after last tool looks like a long deliverable (not a one-line step). */
-export const scorePostToolBlockAsFinalAnswer = (block: AssistantContentBlock): number => {
-  if (block.tools && block.tools.length > 0) return 0;
+/**
+ * A mixed / post-tool prose block that is just a single short status line
+ * (e.g. "先重建 worktree:") stays folded together with its tools. Anything richer —
+ * multiple lines, markdown structure, more than one sentence, or a long run-on line —
+ * is treated as real prose and lifted out of the fold so it renders inline in reading order.
+ */
+export const isFoldableStatusLine = (block: AssistantContentBlock): boolean => {
   const raw = (block.content ?? '').trim();
-  if (!raw || raw === LOADING_FLAT) return 0;
+  if (!raw || raw === LOADING_FLAT) return true;
 
-  let score = 0;
-  const compact = raw.replaceAll(/\s+/g, ' ');
-  if (compact.length >= POST_TOOL_ANSWER_LENGTH_LONG_MIN_CHARS)
-    score += POST_TOOL_ANSWER_LENGTH_LONG_SCORE;
-  else if (compact.length >= POST_TOOL_ANSWER_LENGTH_MEDIUM_MIN_CHARS)
-    score += POST_TOOL_ANSWER_MEDIUM_TEXT_SCORE;
+  // A status line is a single line; any newline means paragraphed prose.
+  if (raw.includes('\n')) return false;
 
-  if (raw.includes('\n\n')) score += POST_TOOL_ANSWER_DOUBLE_NEWLINE_SCORE;
-  else if (raw.split('\n').filter((l) => l.trim()).length >= POST_TOOL_ANSWER_MULTI_LINE_MIN_COUNT)
-    score += POST_TOOL_ANSWER_MULTI_LINE_SCORE;
-
+  // Markdown heading or list marker → structured deliverable, not a status line.
   if (
-    new RegExp(`^#{1,${WORKFLOW_MARKDOWN_HEADING_MAX_LEVEL}}\\s`, 'm').test(raw) ||
-    /^\s*[-*]\s+\S/m.test(raw)
+    new RegExp(`^#{1,${WORKFLOW_MARKDOWN_HEADING_MAX_LEVEL}}\\s`).test(raw) ||
+    /^[-*]\s+\S/.test(raw)
   )
-    score += POST_TOOL_ANSWER_MARKDOWN_STRUCTURE_SCORE;
+    return false;
 
-  const punctCount = (compact.match(/[。！？.!?]/g) ?? []).length;
-  if (punctCount >= POST_TOOL_ANSWER_PUNCT_MIN_COUNT) score += POST_TOOL_ANSWER_PUNCT_SCORE;
+  // A long run-on line reads as prose even without a second sentence.
+  if (raw.length > WORKFLOW_PROSE_HEADLINE_MAX_CHARS) return false;
 
-  return score;
+  // Fold only a single sentence. Latin .!? count only at a real sentence boundary
+  // (end or whitespace) so dotted tokens like "src/a.ts" or "Node.js" don't inflate it.
+  const sentenceCount = (raw.match(/[。！？]|[.!?](?=\s|$)/g) ?? []).length;
+  return sentenceCount <= 1;
 };
 
 /**
- * While generating, first index at or after {@param lastToolIndex} whose prose-only block scores
- * as final-answer-like. Tail from here stays out of the workflow fold. Returns null if tooling
- * reappears or nothing qualifies.
+ * While generating, first index at or after {@param lastToolIndex} whose prose-only block reads as
+ * real prose rather than a one-line status. Tail from here stays out of the workflow fold. Returns
+ * null if tooling reappears or nothing qualifies.
  */
 export const getPostToolAnswerSplitIndex = (
   blocks: AssistantContentBlock[],
@@ -82,7 +73,7 @@ export const getPostToolAnswerSplitIndex = (
   for (let i = lastToolIndex + 1; i < blocks.length; i++) {
     const b = blocks[i]!;
     if (b.tools && b.tools.length > 0) return null;
-    if (scorePostToolBlockAsFinalAnswer(b) >= POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD) return i;
+    if (!isFoldableStatusLine(b)) return i;
   }
   return null;
 };
@@ -95,7 +86,14 @@ const toTitleCase = (apiName: string): string => {
 };
 
 export const getToolDisplayName = (apiName: string): string => {
-  return TOOL_API_DISPLAY_NAMES[apiName] || toTitleCase(apiName);
+  const linearLabel = formatLinearMcpShortLabel(apiName);
+  if (linearLabel) return linearLabel;
+
+  const defaultValue = toTitleCase(apiName);
+  const key = TOOL_API_DISPLAY_NAMES[apiName];
+  if (!key) return defaultValue;
+
+  return t(key, { defaultValue, ns: 'chat' });
 };
 
 export const getToolSummaryText = (tools: ChatToolPayloadWithResult[]): string => {
@@ -119,6 +117,23 @@ export const getToolSummaryText = (tools: ChatToolPayloadWithResult[]): string =
 
 export const hasToolError = (tools: ChatToolPayloadWithResult[]): boolean => {
   return tools.some((t) => t.result?.error);
+};
+
+export const getWorkflowCompletionStatus = (
+  tools: ChatToolPayloadWithResult[],
+): 'success' | 'partial' | 'error' => {
+  const collapsible = tools.filter((t) => t.intervention?.status !== 'pending');
+  if (collapsible.length === 0) return 'success';
+
+  const completed = collapsible.filter(
+    (t) => t.result != null && t.result.content !== LOADING_FLAT,
+  );
+  if (completed.length === 0) return 'success';
+
+  const errorCount = completed.filter((t) => t.result?.error).length;
+  if (errorCount === 0) return 'success';
+  if (errorCount === completed.length) return 'error';
+  return 'partial';
 };
 
 export const getToolFirstDetail = (tool: ChatToolPayloadWithResult): string => {
@@ -235,6 +250,27 @@ const stripLightMarkdownForHeadline = (md: string): string => {
   return s;
 };
 
+const extractMarkdownHeadingTitle = (md: string): string => {
+  const withoutCode = md.replaceAll(/```[\s\S]*?```/g, ' ');
+  const lines = withoutCode.split('\n');
+  let lastTitle = '';
+
+  for (const line of lines) {
+    const match = line.match(
+      new RegExp(`^\\s{0,3}#{1,${WORKFLOW_MARKDOWN_HEADING_MAX_LEVEL}}\\s+(.+?)\\s*$`),
+    );
+    if (!match) continue;
+
+    const raw = match[1]?.replace(/\s+#+\s*$/, '') ?? '';
+    const title = stripLightMarkdownForHeadline(raw).replaceAll(/\s+/g, ' ').trim();
+    if (!title) continue;
+
+    lastTitle = truncateDisplayAtWord(title, WORKFLOW_PROSE_HEADLINE_MAX_CHARS);
+  }
+
+  return lastTitle;
+};
+
 /**
  * Deterministic one-line snippet from streamed assistant prose (A path).
  * Prefers a full sentence when punctuation exists; otherwise trims to max width.
@@ -256,34 +292,75 @@ export const shapeProseForWorkflowHeadline = (source: string): string => {
   return truncateDisplayAtWord(s, WORKFLOW_PROSE_HEADLINE_MAX_CHARS);
 };
 
-/** Raw assistant `content` from the latest block that qualifies (scan from end). */
-export const extractLatestProseHeadlineSource = (blocks: AssistantContentBlock[]): string => {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const c = blocks[i]?.content?.trim() ?? '';
-    if (!c || c === LOADING_FLAT) continue;
-    if (c.length < WORKFLOW_PROSE_SOURCE_MIN_CHARS) continue;
-    return c;
-  }
-  return '';
+const getBlockContent = (block: AssistantContentBlock): string => {
+  const content = block.content?.trim() ?? '';
+  if (!content || content === LOADING_FLAT) return '';
+  return content;
 };
 
-export interface WorkflowStreamingHeadlineParts {
-  explicitStep: string;
-  fallbackTool: string;
-  proseSource: string;
-}
+const getBlockReasoningContent = (block: AssistantContentBlock): string => {
+  const reasoning = block.reasoning?.content?.trim() ?? '';
+  if (!reasoning || reasoning === LOADING_FLAT) return '';
+  return reasoning;
+};
 
-/** Split B / raw A source / C for streaming headline composition (A commits in UI with idle/sentence rules). */
-export const getWorkflowStreamingHeadlineParts = (
+const isThinkingOnlyBlock = (block: AssistantContentBlock): boolean => {
+  if (block.tools?.length) return false;
+  if ((block.imageList?.length ?? 0) > 0) return false;
+  return !!getBlockReasoningContent(block) && !getBlockContent(block) && !block.error;
+};
+
+export type WorkflowStreamingHeadlineState =
+  | { kind: 'idle' }
+  | { kind: 'prose'; proseSource: string }
+  | { kind: 'thinking'; reasoningTitle: string }
+  | { explicitStep: string; fallbackTool: string; kind: 'tool' };
+
+const getHeadlineStateFromBlock = (
+  block: AssistantContentBlock,
+): WorkflowStreamingHeadlineState | null => {
+  if (block.tools?.length) {
+    const lastTool = block.tools.at(-1);
+    const explicitStep = lastTool ? getExplicitStepHeadlineLine(lastTool) : '';
+    const fallbackTool = lastTool ? getToolFallbackHeadlineLine(lastTool) : '';
+    if (!explicitStep && !fallbackTool) return null;
+
+    return {
+      explicitStep,
+      fallbackTool,
+      kind: 'tool',
+    };
+  }
+
+  if (isThinkingOnlyBlock(block)) {
+    const reasoningTitle = extractMarkdownHeadingTitle(getBlockReasoningContent(block));
+    if (!reasoningTitle) return null;
+
+    return {
+      kind: 'thinking',
+      reasoningTitle,
+    };
+  }
+
+  const proseSource = getBlockContent(block);
+  if (proseSource.length < WORKFLOW_PROSE_SOURCE_MIN_CHARS) return null;
+
+  return { kind: 'prose', proseSource };
+};
+
+/** Walk backward and return the first block that can produce a meaningful headline state. */
+export const getWorkflowStreamingHeadlineState = (
   blocks: AssistantContentBlock[],
-  tools: ChatToolPayloadWithResult[],
-): WorkflowStreamingHeadlineParts => {
-  const last = tools.at(-1);
-  return {
-    explicitStep: last ? getExplicitStepHeadlineLine(last) : '',
-    fallbackTool: last ? getToolFallbackHeadlineLine(last) : '',
-    proseSource: extractLatestProseHeadlineSource(blocks),
-  };
+): WorkflowStreamingHeadlineState => {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    if (!block) continue;
+
+    const state = getHeadlineStateFromBlock(block);
+    if (state) return state;
+  }
+
+  return { kind: 'idle' };
 };
 
 export const formatReasoningDuration = (ms: number): string => {
@@ -293,6 +370,8 @@ export const formatReasoningDuration = (ms: number): string => {
   const seconds = totalSeconds % DURATION_SECONDS_PER_MINUTE;
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 };
+
+const WORKFLOW_SUMMARY_TOP_N = 3;
 
 export const getWorkflowSummaryText = (blocks: AssistantContentBlock[]): string => {
   const tools = blocks.flatMap((b) => b.tools ?? []);
@@ -305,19 +384,68 @@ export const getWorkflowSummaryText = (blocks: AssistantContentBlock[]): string 
     groups.set(tool.apiName, existing);
   }
 
-  const toolParts: string[] = [];
-  for (const [apiName, { count, errorCount }] of groups) {
-    let part = getToolDisplayName(apiName);
-    if (count > 1) part += ` (${count})`;
-    if (errorCount > 0) part += ' (failed)';
-    toolParts.push(part);
+  const entries = [...groups.entries()];
+  const totalKinds = entries.length;
+  const totalCalls = entries.reduce((sum, [, { count }]) => sum + count, 0);
+  const totalErrors = entries.reduce((sum, [, { errorCount }]) => sum + errorCount, 0);
+
+  const formatToolPart = ([apiName, info]: [string, { count: number }]): string => {
+    const name = getToolDisplayName(apiName);
+    return info.count > 1 ? `${name} (${info.count})` : name;
+  };
+
+  // List all kinds when few; truncate to top N (by call count) when many.
+  // "+1 more" reads awkwardly, so we only collapse when there are ≥2 extra kinds beyond top N.
+  const displayedEntries =
+    totalKinds <= WORKFLOW_SUMMARY_TOP_N + 1
+      ? entries
+      : [...entries].sort(([, a], [, b]) => b.count - a.count).slice(0, WORKFLOW_SUMMARY_TOP_N);
+
+  // The tool list, e.g. "Task Create (5), Edit (4), Read (2)".
+  let toolsText = displayedEntries.map(formatToolPart).join(', ');
+
+  // Append "across N tools" when the list is truncated — otherwise it duplicates the visible list.
+  if (displayedEntries.length < totalKinds) {
+    toolsText += ` ${t('workflow.summaryAcrossTools', {
+      count: totalKinds,
+      defaultValue: 'across {{count}} tools',
+      ns: 'chat',
+    })}`;
   }
 
-  let result = toolParts.join(', ');
+  // Lead with the total call count when a tool was called more than once — it's the most
+  // useful signal, so it goes first ("15 calls: …"). When totalCalls equals totalKinds the
+  // count is redundant with the list, so we just show the list.
+  const segments: string[] =
+    totalKinds > 1 && totalCalls > totalKinds
+      ? [
+          t('workflow.summaryCallsLead', {
+            count: totalCalls,
+            defaultValue: '{{count}} calls: {{tools}}',
+            ns: 'chat',
+            tools: toolsText,
+          }),
+        ]
+      : [toolsText];
+
+  if (totalErrors > 0) {
+    segments.push(
+      t('workflow.summaryFailed', {
+        count: totalErrors,
+        defaultValue: '{{count}} failed',
+        ns: 'chat',
+      }),
+    );
+  }
+  let result = segments.join(' · ');
 
   const totalReasoningMs = blocks.reduce((sum, b) => sum + (b.reasoning?.duration ?? 0), 0);
   if (totalReasoningMs > 0) {
-    result += ` · Thought for ${formatReasoningDuration(totalReasoningMs)}`;
+    result += ` · ${t('workflow.thoughtForDuration', {
+      defaultValue: 'Thought for {{duration}}',
+      duration: formatReasoningDuration(totalReasoningMs),
+      ns: 'chat',
+    })}`;
   }
 
   return result;

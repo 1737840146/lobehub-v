@@ -60,40 +60,6 @@ export const TOOL_HEADLINE_DETAIL_TRUNCATE_LEN = 117;
 /** Suffix when truncating tool strings. */
 export const TOOL_HEADLINE_TRUNCATION_SUFFIX = '...';
 
-// ─── Post-tool “final answer” block promotion (Group partition) ───────────
-
-/** Sum of heuristic scores at or above this moves blocks after last tool into answer column while generating. */
-export const POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD = 3;
-
-/** Add this score when compacted prose length ≥ this (long answer signal). */
-export const POST_TOOL_ANSWER_LENGTH_LONG_SCORE = 2;
-
-/** Lower bound (chars) for POST_TOOL_ANSWER_LENGTH_LONG_SCORE. */
-export const POST_TOOL_ANSWER_LENGTH_LONG_MIN_CHARS = 180;
-
-/** Add this score when length ∈ [medium min, long min). */
-export const POST_TOOL_ANSWER_MEDIUM_TEXT_SCORE = 1;
-
-/** Lower bound (chars) for medium-length contribution. */
-export const POST_TOOL_ANSWER_LENGTH_MEDIUM_MIN_CHARS = 100;
-
-/** Blank-line paragraphing: strong signal for structured deliverable. */
-export const POST_TOOL_ANSWER_DOUBLE_NEWLINE_SCORE = 2;
-
-/** Without \\n\\n, treat many non-empty lines as paragraphing when count ≥ this. */
-export const POST_TOOL_ANSWER_MULTI_LINE_SCORE = 2;
-
-/** Minimum trimmed lines (with at least one non-empty) to count as multi-line body. */
-export const POST_TOOL_ANSWER_MULTI_LINE_MIN_COUNT = 3;
-
-/** Markdown heading or list at line start: structured deliverable. */
-export const POST_TOOL_ANSWER_MARKDOWN_STRUCTURE_SCORE = 2;
-
-/** Add one point when sentence-ending punctuation count ≥ this (compact text). */
-export const POST_TOOL_ANSWER_PUNCT_MIN_COUNT = 3;
-
-export const POST_TOOL_ANSWER_PUNCT_SCORE = 1;
-
 // ─── Time formatting (workflow summary / reasoning suffix) ───────────────
 
 /** Seconds per minute when formatting durations like "2m 30s". */
@@ -102,106 +68,129 @@ export const DURATION_SECONDS_PER_MINUTE = 60;
 /** Duration inputs are in milliseconds; convert to whole seconds for display. */
 export const TIME_MS_PER_SECOND = 1000;
 
-// ─── apiName → past-tense human-readable label (workflow summary & headlines) ─
+// ─── apiName → i18n key for human-readable label (workflow summary & headlines) ─
 
-/** Past-tense labels for built-in / known tool api names. Unknown api names use title-cased fallback. */
+/** Translation keys for built-in / known tool api names. Unknown api names use title-cased fallback. */
 export const TOOL_API_DISPLAY_NAMES: Record<string, string> = {
   // Web browsing
-  crawlMultiPages: 'Crawled pages',
-  crawlSinglePage: 'Crawled a page',
-  search: 'Searched the web',
+  crawlMultiPages: 'workflow.toolDisplayName.crawlMultiPages',
+  crawlSinglePage: 'workflow.toolDisplayName.crawlSinglePage',
+  search: 'workflow.toolDisplayName.search',
 
   // Knowledge base
-  readKnowledge: 'Read knowledge',
-  searchKnowledgeBase: 'Searched knowledge base',
+  readKnowledge: 'workflow.toolDisplayName.readKnowledge',
+  searchKnowledgeBase: 'workflow.toolDisplayName.searchKnowledgeBase',
 
   // Notebook
-  createDocument: 'Created a document',
-  deleteDocument: 'Deleted a document',
-  getDocument: 'Read a document',
-  updateDocument: 'Updated a document',
+  createDocument: 'workflow.toolDisplayName.createDocument',
+  deleteDocument: 'workflow.toolDisplayName.deleteDocument',
+  getDocument: 'workflow.toolDisplayName.getDocument',
+  updateDocument: 'workflow.toolDisplayName.updateDocument',
 
   // Agent documents
-  copyDocument: 'Copied a document',
-  editDocument: 'Edited a document',
-  listDocuments: 'Listed documents',
-  readDocument: 'Read a document',
-  readDocumentByFilename: 'Read a document',
-  removeDocument: 'Removed a document',
-  renameDocument: 'Renamed a document',
-  upsertDocumentByFilename: 'Updated a document',
-  updateLoadRule: 'Updated load rule',
+  copyDocument: 'workflow.toolDisplayName.copyDocument',
+  listDocuments: 'workflow.toolDisplayName.listDocuments',
+  readDocument: 'workflow.toolDisplayName.readDocument',
+  removeDocument: 'workflow.toolDisplayName.removeDocument',
+  renameDocument: 'workflow.toolDisplayName.renameDocument',
+  replaceDocumentContent: 'workflow.toolDisplayName.replaceDocumentContent',
+  updateLoadRule: 'workflow.toolDisplayName.updateLoadRule',
 
   // Calculator
-  calculate: 'Calculated',
-  evaluate: 'Evaluated expression',
-  solve: 'Solved equation',
-  execute: 'Executed calculation',
+  calculate: 'workflow.toolDisplayName.calculate',
+  evaluate: 'workflow.toolDisplayName.evaluate',
+  solve: 'workflow.toolDisplayName.solve',
+  execute: 'workflow.toolDisplayName.execute',
 
-  // Local system
-  editLocalFile: 'Edited a file',
-  globLocalFiles: 'Searched files',
-  grepContent: 'Searched content',
-  killCommand: 'Stopped a command',
-  listLocalFiles: 'Listed files',
-  moveLocalFiles: 'Moved files',
-  readLocalFile: 'Read a file',
-  renameLocalFile: 'Renamed a file',
-  runCommand: 'Ran a command',
-  searchLocalFiles: 'Searched files',
-  writeLocalFile: 'Wrote a file',
-  getCommandOutput: 'Read command output',
+  // Local system / cloud sandbox (file ops share the same display label)
+  editFile: 'workflow.toolDisplayName.editLocalFile',
+  globFiles: 'workflow.toolDisplayName.globLocalFiles',
+  grepContent: 'workflow.toolDisplayName.grepContent',
+  killCommand: 'workflow.toolDisplayName.killCommand',
+  listFiles: 'workflow.toolDisplayName.listLocalFiles',
+  moveFiles: 'workflow.toolDisplayName.moveLocalFiles',
+  readFile: 'workflow.toolDisplayName.readLocalFile',
+  runCommand: 'workflow.toolDisplayName.runCommand',
+  searchFiles: 'workflow.toolDisplayName.searchLocalFiles',
+  writeFile: 'workflow.toolDisplayName.writeLocalFile',
+  getCommandOutput: 'workflow.toolDisplayName.getCommandOutput',
+  // Legacy aliases — keep so historical messages still get a label.
+  // `renameLocalFile` is kept even though the new surface drops rename
+  // (rename is now done via `moveFiles`).
+  editLocalFile: 'workflow.toolDisplayName.editLocalFile',
+  globLocalFiles: 'workflow.toolDisplayName.globLocalFiles',
+  listLocalFiles: 'workflow.toolDisplayName.listLocalFiles',
+  moveLocalFiles: 'workflow.toolDisplayName.moveLocalFiles',
+  readLocalFile: 'workflow.toolDisplayName.readLocalFile',
+  renameLocalFile: 'workflow.toolDisplayName.renameLocalFile',
+  searchLocalFiles: 'workflow.toolDisplayName.searchLocalFiles',
+  writeLocalFile: 'workflow.toolDisplayName.writeLocalFile',
 
   // Cloud sandbox
-  executeCode: 'Executed code',
+  executeCode: 'workflow.toolDisplayName.executeCode',
 
-  // GTD
-  createPlan: 'Created a plan',
-  createTodos: 'Created todos',
-  updatePlan: 'Updated plan',
-  updateTodos: 'Updated todos',
-  clearTodos: 'Cleared todos',
-  execTask: 'Executed a task',
-  execTasks: 'Executed tasks',
+  // Codex
+  command_execution: 'workflow.toolDisplayName.runCommand',
+  file_change: 'workflow.toolDisplayName.editLocalFile',
+  mcp_tool_call: 'workflow.toolDisplayName.callMcpTool',
+  todo_list: 'workflow.toolDisplayName.updateTodos',
+  web_search: 'workflow.toolDisplayName.search',
+
+  // Lobe Agent — Plan & Todos
+  createPlan: 'workflow.toolDisplayName.createPlan',
+  createTodos: 'workflow.toolDisplayName.createTodos',
+  updatePlan: 'workflow.toolDisplayName.updatePlan',
+  updateTodos: 'workflow.toolDisplayName.updateTodos',
+  clearTodos: 'workflow.toolDisplayName.clearTodos',
+
+  // Lobe Agent — Sub-Agents
+  callSubAgent: 'workflow.toolDisplayName.callSubAgent',
 
   // Memory
-  addActivityMemory: 'Saved memory',
-  addContextMemory: 'Saved memory',
-  addExperienceMemory: 'Saved memory',
-  addIdentityMemory: 'Saved memory',
-  addPreferenceMemory: 'Saved memory',
-  removeIdentityMemory: 'Removed memory',
-  searchUserMemory: 'Searched memory',
-  updateIdentityMemory: 'Updated memory',
+  addActivityMemory: 'workflow.toolDisplayName.addActivityMemory',
+  addContextMemory: 'workflow.toolDisplayName.addContextMemory',
+  addExperienceMemory: 'workflow.toolDisplayName.addExperienceMemory',
+  addIdentityMemory: 'workflow.toolDisplayName.addIdentityMemory',
+  addPreferenceMemory: 'workflow.toolDisplayName.addPreferenceMemory',
+  removeIdentityMemory: 'workflow.toolDisplayName.removeIdentityMemory',
+  searchUserMemory: 'workflow.toolDisplayName.searchUserMemory',
+  updateIdentityMemory: 'workflow.toolDisplayName.updateIdentityMemory',
 
   // Agent management
-  callAgent: 'Called an agent',
-  createAgent: 'Created an agent',
-  deleteAgent: 'Deleted an agent',
-  searchAgent: 'Searched agents',
-  updateAgent: 'Updated an agent',
+  callAgent: 'workflow.toolDisplayName.callAgent',
+  createAgent: 'workflow.toolDisplayName.createAgent',
+  deleteAgent: 'workflow.toolDisplayName.deleteAgent',
+  searchAgent: 'workflow.toolDisplayName.searchAgent',
+  updateAgent: 'workflow.toolDisplayName.updateAgent',
 
   // Page agent
-  editTitle: 'Edited title',
-  getPageContent: 'Read page content',
-  initPage: 'Initialized page',
-  modifyNodes: 'Modified page',
-  replaceText: 'Replaced text',
+  editTitle: 'workflow.toolDisplayName.editTitle',
+  getPageContent: 'workflow.toolDisplayName.getPageContent',
+  initPage: 'workflow.toolDisplayName.initPage',
+  modifyNodes: 'workflow.toolDisplayName.modifyNodes',
+  replaceText: 'workflow.toolDisplayName.replaceText',
 
   // Skills
-  activateSkill: 'Activated a skill',
-  activateTools: 'Activated tools',
-  execScript: 'Executed a script',
+  activateSkill: 'workflow.toolDisplayName.activateSkill',
+  activateTools: 'workflow.toolDisplayName.activateTools',
+  execScript: 'workflow.toolDisplayName.execScript',
 
   // Skill store
-  importFromMarket: 'Imported from market',
-  importSkill: 'Imported a skill',
-  searchSkill: 'Searched skills',
+  importFromMarket: 'workflow.toolDisplayName.importFromMarket',
+  importSkill: 'workflow.toolDisplayName.importSkill',
+  searchSkill: 'workflow.toolDisplayName.searchSkill',
 
   // Misc
-  finishOnboarding: 'Finished onboarding',
-  getOnboardingState: 'Checked onboarding state',
-  getTopicContext: 'Read topic context',
-  listOnlineDevices: 'Listed devices',
-  activateDevice: 'Activated device',
+  finishOnboarding: 'workflow.toolDisplayName.finishOnboarding',
+  getTopicContext: 'workflow.toolDisplayName.getTopicContext',
+  listOnlineDevices: 'workflow.toolDisplayName.listOnlineDevices',
+  activateDevice: 'workflow.toolDisplayName.activateDevice',
+
+  // Web onboarding
+  saveUserQuestion: 'workflow.toolDisplayName.saveUserQuestion',
+  writeDocument: 'workflow.toolDisplayName.writeDocument',
+
+  // Agent marketplace
+  showAgentMarketplace: 'workflow.toolDisplayName.showAgentMarketplace',
+  submitAgentPick: 'workflow.toolDisplayName.submitAgentPick',
 };

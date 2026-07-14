@@ -11,6 +11,13 @@ const mockProviderConfigs = {
   anthropic: { enabled: false },
 };
 
+vi.mock('@lobechat/business-model-bank/model-config', async () => {
+  const { LOBE_DEFAULT_MODEL_LIST } = await import('model-bank');
+  return {
+    loadModels: vi.fn().mockResolvedValue(LOBE_DEFAULT_MODEL_LIST),
+  };
+});
+
 let serverDB: LobeChatDatabase;
 let repo: AiInfraRepos;
 
@@ -126,6 +133,22 @@ describe('AiInfraRepos', () => {
       const result = await repo.getAiProviderModelList(providerId, { limit: 3, offset: 2 });
 
       expect(result.map((i) => i.id)).toEqual(all.slice(2, 5).map((i) => i.id));
+    });
+
+    it('should filter hidden builtin models before applying pagination', async () => {
+      const providerId = 'lobehub';
+      const builtinModels = [
+        { enabled: true, id: 'lobehub-onboarding-v1', type: 'chat', visible: false },
+        { enabled: true, id: 'deepseek-v4-pro', type: 'chat' },
+        { enabled: true, id: 'gpt-5.5', type: 'chat' },
+      ] as AiProviderModelListItem[];
+
+      vi.spyOn(repo.aiModelModel, 'getModelListByProviderId').mockResolvedValue([]);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue(builtinModels);
+
+      const result = await repo.getAiProviderModelList(providerId, { limit: 1, offset: 0 });
+
+      expect(result.map((i) => i.id)).toEqual(['deepseek-v4-pro']);
     });
 
     it('should support enabled filter with pagination', async () => {
@@ -267,7 +290,7 @@ describe('AiInfraRepos', () => {
       expect(merged.settings).toEqual({ searchImpl: 'params' });
     });
 
-    // 测试场景：用户模型 abilitie 为空（Empty），而基础模型有搜索能力和设置
+    // Test scenario: user model abilities is empty (Empty) while the base model has search capability and settings
     it('should retain builtin abilities and settings when user model has no abilities (empty) and builtin has settings', async () => {
       const providerId = 'openai';
 
@@ -285,7 +308,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { search: false }, // 使用 builtin abilities
+          abilities: { search: false }, // Use builtin abilities
           settings: { searchImpl: 'params', searchProvider: 'google' }, // builtin has settings
         },
       ];
@@ -297,9 +320,9 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // 使用 builtin abilities
+      // Use builtin abilities
       expect(merged?.abilities?.search).toEqual(false);
-      // 保留 builtin settings
+      // Retain builtin settings
       expect(merged?.settings).toBeUndefined();
     });
 
@@ -320,7 +343,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { search: true }, // 使用 builtin abilities
+          abilities: { search: true }, // Use builtin abilities
           settings: { searchImpl: 'params', searchProvider: 'google' }, // builtin has settings
         },
       ];
@@ -332,13 +355,13 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // 使用 builtin abilities
+      // Use builtin abilities
       expect(merged?.abilities?.search).toEqual(true);
-      // 保留 builtin settings
+      // Retain builtin settings
       expect(merged?.settings).toEqual({ searchImpl: 'params', searchProvider: 'google' });
     });
 
-    // 测试场景：用户模型未启用搜索（abilities.search 为 undefined），而基础模型有搜索能力和设置
+    // Test scenario: user model has search disabled (abilities.search is undefined) while the base model has search capability and settings
     it('should retain builtin settings when user model has no abilities (empty) and builtin has settings', async () => {
       const providerId = 'openai';
 
@@ -347,7 +370,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { vision: true }, // 启用 vision 能力, no search
+          abilities: { vision: true }, // Enable vision ability, no search
         },
       ];
 
@@ -368,9 +391,9 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // abilities.search 会被 merge 为 false，此处和 getEnabledAiModel 不同
+      // abilities.search will be merged as false, differs from getEnabledAiModel
       expect(merged?.abilities?.search).toEqual(false);
-      // 删去 builtin settings
+      // Remove builtin settings
       expect(merged?.settings).toBeUndefined();
     });
 
@@ -382,7 +405,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { vision: true }, // 启用 vision 能力, no search
+          abilities: { vision: true }, // Enable vision ability, no search
         },
       ];
 
@@ -391,7 +414,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { search: true }, // builtin abilities 会被 merge
+          abilities: { search: true }, // builtin abilities will be merged
           settings: { searchImpl: 'params', searchProvider: 'google' }, // builtin has settings
         },
       ];
@@ -403,13 +426,13 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // abilities.search 会被 merge 为 true，此处和 getEnabledAiModel 不同
+      // abilities.search will be merged as true, differs from getEnabledAiModel
       expect(merged?.abilities?.search).toEqual(true);
-      // 保留 builtin settings
+      // Retain builtin settings
       expect(merged?.settings).toEqual({ searchImpl: 'params', searchProvider: 'google' });
     });
 
-    // 测试：用户模型无 abilities.search（undefined），保留 builtin settings（mergeArrayById 优先用户，但用户无则 builtin）
+    // Test: user model has no abilities.search (undefined), retains builtin settings (mergeArrayById prefers user, falls back to builtin when absent)
     it('should retain builtin settings when user model has no abilities.search (undefined) and builtin has settings', async () => {
       const providerId = 'openai';
 
@@ -418,7 +441,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: {}, // 无 search
+          abilities: {}, // no search
         },
       ];
 
@@ -440,7 +463,7 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities?.search).toBeUndefined();
-      // 保留 builtin settings
+      // Retain builtin settings
       expect(merged?.settings).toEqual({ searchImpl: 'params', searchProvider: 'google' });
     });
 
@@ -452,7 +475,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: {}, // 无 search
+          abilities: {}, // no search
         },
       ];
 
@@ -461,7 +484,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          // 无 settings
+          // no settings
         },
       ];
 
@@ -473,11 +496,11 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities?.search).toBeUndefined();
-      // 无 settings
+      // no settings
       expect(merged?.settings).toBeUndefined();
     });
 
-    // 测试：用户模型有 abilities.search: true
+    // Test: user model has abilities.search: true
     it('should inject defaults when user has search: true, no existing settings (builtin none)', async () => {
       const providerId = 'openai';
 
@@ -486,7 +509,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { search: true }, // 用户启用
+          abilities: { search: true }, // user-enabled
         },
       ];
 
@@ -495,7 +518,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          // 无 settings
+          // no settings
         },
       ];
 
@@ -507,7 +530,7 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities).toEqual({ search: true });
-      // 注入 defaults
+      // Inject defaults
       expect(merged?.settings).toEqual({ searchImpl: 'params' });
     });
 
@@ -540,11 +563,11 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities).toEqual({ search: true });
-      // 使用 builtin settings
+      // Use builtin settings
       expect(merged?.settings).toEqual({ searchImpl: 'tool' });
     });
 
-    // 测试：用户模型有 abilities.search: false
+    // Test: user model has abilities.search: false
     it('should remove settings when user has search: false and builtin has settings', async () => {
       const providerId = 'openai';
 
@@ -553,7 +576,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          abilities: { search: false }, // 用户禁用
+          abilities: { search: false }, // user-disabled
         },
       ];
 
@@ -574,7 +597,7 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities).toEqual({ search: false });
-      // 移除 search 相关，保留其他
+      // Remove search-related settings, retain others
       expect(merged?.settings).toEqual({ extendParams: [] });
     });
 
@@ -595,7 +618,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          // 无 settings
+          // no settings
         },
       ];
 
@@ -607,7 +630,7 @@ describe('AiInfraRepos', () => {
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
       expect(merged?.abilities).toEqual({ search: false });
-      // 无 settings
+      // no settings
       expect(merged?.settings).toBeUndefined();
     });
 
@@ -640,7 +663,7 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // 应该使用用户的 settings
+      // Should use user settings
       expect(merged?.settings).toEqual({ searchImpl: 'params', searchProvider: 'user-provider' });
     });
 
@@ -653,7 +676,7 @@ describe('AiInfraRepos', () => {
           type: 'chat',
           enabled: true,
           abilities: { vision: true },
-          // 用户未设置 settings
+          // user has not set settings
         },
       ];
 
@@ -673,7 +696,7 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // 应该使用内置的 settings
+      // Should use builtin settings
       expect(merged?.settings).toEqual({ searchImpl: 'tool', searchProvider: 'google' });
     });
 
@@ -686,7 +709,7 @@ describe('AiInfraRepos', () => {
           type: 'chat',
           enabled: true,
           abilities: { vision: true },
-          // 用户未设置 settings
+          // user has not set settings
         },
       ];
 
@@ -695,7 +718,7 @@ describe('AiInfraRepos', () => {
           id: 'gpt-4',
           type: 'chat',
           enabled: true,
-          // 内置也无 settings
+          // builtin also has no settings
         },
       ];
 
@@ -706,7 +729,7 @@ describe('AiInfraRepos', () => {
 
       const merged = result.find((m) => m.id === 'gpt-4');
       expect(merged).toBeDefined();
-      // 无 settings
+      // no settings
       expect(merged?.settings).toBeUndefined();
     });
 
@@ -756,7 +779,7 @@ describe('AiInfraRepos', () => {
         { id: 'dall-e-3', type: 'image', enabled: true },
         { id: 'text-embedding-3-small', type: 'embedding', enabled: true },
         { id: 'tts-1', type: 'tts', enabled: true },
-        { id: 'whisper-1', type: 'stt', enabled: true },
+        { id: 'whisper-1', type: 'asr', enabled: true },
       ] as AiProviderModelListItem[];
 
       vi.spyOn(repo.aiModelModel, 'getModelListByProviderId').mockResolvedValue(userModels);
@@ -767,7 +790,7 @@ describe('AiInfraRepos', () => {
       expect(result.find((m) => m.id === 'dall-e-3')!.type).toBe('image');
       expect(result.find((m) => m.id === 'text-embedding-3-small')!.type).toBe('embedding');
       expect(result.find((m) => m.id === 'tts-1')!.type).toBe('tts');
-      expect(result.find((m) => m.id === 'whisper-1')!.type).toBe('stt');
+      expect(result.find((m) => m.id === 'whisper-1')!.type).toBe('asr');
     });
 
     it('should keep user type for custom models not in builtin list', async () => {
@@ -790,6 +813,27 @@ describe('AiInfraRepos', () => {
       const custom = result.find((m) => m.id === 'my-custom-model');
       expect(custom).toBeDefined();
       expect(custom!.type).toBe('chat');
+    });
+
+    it('should normalize the legacy `stt` type to `asr` for custom models on read', async () => {
+      const providerId = 'openai';
+
+      // A custom model not in the builtin list, still stored with the old `stt`
+      // value in the DB (no bulk migration). It should read back as `asr`.
+      const userModels: AiProviderModelListItem[] = [
+        { id: 'my-custom-transcribe', type: 'stt', enabled: true },
+      ] as unknown as AiProviderModelListItem[];
+
+      const builtinModels: AiProviderModelListItem[] = [
+        { id: 'gpt-4', type: 'chat', enabled: true },
+      ] as AiProviderModelListItem[];
+
+      vi.spyOn(repo.aiModelModel, 'getModelListByProviderId').mockResolvedValue(userModels);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue(builtinModels);
+
+      const result = await repo.getAiProviderModelList(providerId);
+
+      expect(result.find((m) => m.id === 'my-custom-transcribe')!.type).toBe('asr');
     });
   });
 });
