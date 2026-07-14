@@ -1,7 +1,8 @@
 'use client';
 
 import { Github } from '@lobehub/icons';
-import { ActionIcon, Avatar, Button, Flexbox, Icon, stopPropagation, Text } from '@lobehub/ui';
+import { ActionIcon, Avatar, Flexbox, Icon, stopPropagation, Text } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import {
   DotIcon,
@@ -13,9 +14,9 @@ import {
 } from 'lucide-react';
 import qs from 'query-string';
 import { memo } from 'react';
-import { Link } from 'react-router-dom';
 
 import PublishedTime from '@/components/PublishedTime';
+import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { useSkillCategoryItem } from '@/hooks/useSkillCategory';
 
 import { useDetailContext } from './DetailProvider';
@@ -89,16 +90,16 @@ const Header = memo<{ mobile?: boolean }>(({ mobile }) => {
   );
 
   const cateButton = cate ? (
-    <Link
+    <WorkspaceLink
       to={qs.stringifyUrl({
         query: { category: cate.key },
         url: '/community/skill',
       })}
     >
-      <Button icon={<Icon icon={cate.icon} />} size={'middle'} variant={'outlined'}>
+      <Button icon={<Icon icon={cate.icon} />} size={'middle'}>
         {cate.label}
       </Button>
-    </Link>
+    </WorkspaceLink>
   ) : null;
 
   return (

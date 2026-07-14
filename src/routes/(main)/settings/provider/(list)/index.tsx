@@ -1,13 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 
 import { isCustomBranding } from '@/const/version';
 
 import DesktopLayout from '../_layout/Desktop';
 import MobileLayout from '../_layout/Mobile';
 import ProviderDetailPage from '../detail';
+import { shouldShowProviderFooter } from '../features/providerSettings';
 import Footer from './Footer';
 
 const Page = (props: { mobile?: boolean }) => {
@@ -28,7 +29,7 @@ const Page = (props: { mobile?: boolean }) => {
   return (
     <ProviderLayout onProviderSelect={setProvider}>
       {ProviderListPage}
-      {!isCustomBranding && <Footer />}
+      {shouldShowProviderFooter({ isCustomBranding, providerId: provider }) && <Footer />}
     </ProviderLayout>
   );
 };

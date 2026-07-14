@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, Flexbox, Tag, Text } from '@lobehub/ui';
+import { Flexbox, Tag, Text } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,9 +10,9 @@ import type { ChatTopic } from '@/types/topic';
 import { getOnboardingHistoryTopics } from './history';
 
 interface HistoryPanelProps {
-  activeTopicId: string;
+  activeTopicId?: string;
   onSelectTopic: (topicId: string) => void;
-  selectedTopicId: string;
+  selectedTopicId?: string;
   topics: ChatTopic[];
 }
 

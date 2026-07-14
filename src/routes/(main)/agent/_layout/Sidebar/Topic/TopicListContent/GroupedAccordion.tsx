@@ -3,11 +3,14 @@
 import { Accordion, Flexbox } from '@lobehub/ui';
 import isEqual from 'fast-deep-equal';
 import { MoreHorizontal } from 'lucide-react';
-import { type ComponentType, memo, useEffect, useMemo } from 'react';
+import { type ComponentType, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
+import urlJoin from 'url-join';
 
 import NavItem from '@/features/NavPanel/components/NavItem';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
+import { useTopicGroupCollapse } from '@/hooks/useTopicGroupCollapse';
 import { useChatStore } from '@/store/chat';
 import { topicSelectors } from '@/store/chat/selectors';
 import { useGlobalStore } from '@/store/global';
@@ -21,6 +24,7 @@ import { useAgentTopicGroupMode } from '../hooks/useAgentTopicGroupMode';
 export interface GroupItemComponentProps {
   activeThreadId?: string;
   activeTopicId?: string;
+  expanded: boolean;
   group: GroupedTopic;
 }
 
@@ -30,56 +34,58 @@ interface GroupedAccordionProps {
 
 const GroupedAccordion = memo<GroupedAccordionProps>(({ GroupItem }) => {
   const { t } = useTranslation('topic');
+  const navigate = useNavigate();
   const topicPageSize = useGlobalStore(systemStatusSelectors.topicPageSize);
   const topicSortBy = useUserStore(preferenceSelectors.topicSortBy);
+  const topicIncludeCompleted = useUserStore(preferenceSelectors.topicIncludeCompleted);
   const { topicGroupMode } = useAgentTopicGroupMode();
 
-  const [hasMore, isExpandingPageSize, openAllTopicsDrawer] = useChatStore((s) => [
-    topicSelectors.hasMoreTopics(s),
+  const [hasMore, isExpandingPageSize, activeAgentId] = useChatStore((s) => [
+    topicSelectors.hasMoreTopicsForSidebar(s),
     topicSelectors.isExpandingPageSize(s),
-    s.openAllTopicsDrawer,
+    s.activeAgentId,
   ]);
   const [activeTopicId, activeThreadId] = useChatStore((s) => [s.activeTopicId, s.activeThreadId]);
 
   const groupSelector = useMemo(
-    () => topicSelectors.groupedTopicsForSidebar(topicPageSize, topicSortBy, topicGroupMode),
-    [topicPageSize, topicSortBy, topicGroupMode],
+    () =>
+      topicSelectors.groupedTopicsForSidebar(
+        topicPageSize,
+        topicSortBy,
+        topicGroupMode,
+        topicIncludeCompleted,
+      ),
+    [topicPageSize, topicSortBy, topicGroupMode, topicIncludeCompleted],
   );
   const groupTopics = useChatStore(groupSelector, isEqual);
 
-  const [topicGroupKeys, updateSystemStatus] = useGlobalStore((s) => [
-    systemStatusSelectors.topicGroupKeys(s),
-    s.updateSystemStatus,
-  ]);
-
-  useEffect(() => {
-    updateSystemStatus({ expandTopicGroupKeys: undefined });
-  }, [topicSortBy, topicGroupMode, updateSystemStatus]);
-
-  const expandedKeys = useMemo(
-    () => topicGroupKeys || groupTopics.map((group) => group.id),
-    [topicGroupKeys, groupTopics],
-  );
+  const groupIds = useMemo(() => groupTopics.map((group) => group.id), [groupTopics]);
+  const { expandedKeys, setExpandedKeys } = useTopicGroupCollapse(topicGroupMode, groupIds);
 
   return (
     <Flexbox gap={2}>
       <Accordion
         expandedKeys={expandedKeys}
         gap={2}
-        onExpandedChange={(keys) => updateSystemStatus({ expandTopicGroupKeys: keys as any })}
+        onExpandedChange={(keys) => setExpandedKeys(keys as string[])}
       >
         {groupTopics.map((group) => (
           <GroupItem
             activeThreadId={activeThreadId}
             activeTopicId={activeTopicId}
+            expanded={expandedKeys.includes(group.id)}
             group={group}
             key={group.id}
           />
         ))}
       </Accordion>
       {isExpandingPageSize && <SkeletonList rows={3} />}
-      {hasMore && !isExpandingPageSize && (
-        <NavItem icon={MoreHorizontal} title={t('loadMore')} onClick={openAllTopicsDrawer} />
+      {hasMore && !isExpandingPageSize && activeAgentId && (
+        <NavItem
+          icon={MoreHorizontal}
+          title={t('loadMore')}
+          onClick={() => navigate(urlJoin('/agent', activeAgentId, 'topics'))}
+        />
       )}
     </Flexbox>
   );

@@ -44,6 +44,13 @@ export interface OAuthDeviceFlowConfig {
    */
   deviceCodeEndpoint: string;
   /**
+   * Whether the provider issues a refresh_token (e.g. via `offline_access`
+   * scope) that the server should use to renew the access token before it
+   * expires. Providers with rotating refresh tokens (e.g. xAI) rely on the
+   * server-side refresh pipeline persisting the rotated pair on every renewal.
+   */
+  refreshTokenGrant?: boolean;
+  /**
    * OAuth scopes
    */
   scopes: string[];
@@ -73,6 +80,11 @@ export interface OAuthDeviceFlowKeyVault {
    * OAuth access token (e.g., GitHub's ghu_xxx)
    */
   oauthAccessToken?: string;
+  /**
+   * OAuth refresh token. May rotate on every refresh (e.g. xAI) — always
+   * persist the value returned by the latest refresh response.
+   */
+  oauthRefreshToken?: string;
   /**
    * OAuth token expiration timestamp (ms)
    */
@@ -139,6 +151,21 @@ export interface AiProviderSettings {
    */
   disableBrowserRequest?: boolean;
   /**
+   * Maximum number of tools the provider accepts in a single request.
+   * When set, the harness will abort the request before dispatch if the
+   * tools array exceeds this count, instead of waiting for an upstream
+   * 422 / 400 rejection.
+   *
+   * Example: GitHub Copilot enforces max 128 tools across all its models.
+   */
+  maxToolCount?: number;
+  /**
+   * Maximum serialized tools payload size in bytes before the provider
+   * rejects the request (e.g. Cloudflare AI Workers ~100 KB). If unset,
+   * only the count-based check (`maxToolCount`) is applied.
+   */
+  maxToolPayloadBytes?: number;
+  /**
    * whether provider support edit model
    *
    * @default true
@@ -188,6 +215,7 @@ const OAuthDeviceFlowConfigSchema = z.object({
   clientId: z.string(),
   defaultPollingInterval: z.number().optional(),
   deviceCodeEndpoint: z.string(),
+  refreshTokenGrant: z.boolean().optional(),
   scopes: z.array(z.string()),
   tokenEndpoint: z.string(),
   tokenExchangeEndpoint: z.string().optional(),
@@ -197,6 +225,8 @@ const AiProviderSettingsSchema = z.object({
   authType: z.enum(AiProviderAuthTypes).optional(),
   defaultShowBrowserRequest: z.boolean().optional(),
   disableBrowserRequest: z.boolean().optional(),
+  maxToolCount: z.number().optional(),
+  maxToolPayloadBytes: z.number().optional(),
   modelEditable: z.boolean().optional(),
   oauthDeviceFlow: OAuthDeviceFlowConfigSchema.optional(),
   proxyUrl: z
@@ -315,8 +345,8 @@ export interface AiProviderDetailItem {
 // Update
 export const UpdateAiProviderSchema = z.object({
   config: z.object({}).passthrough().optional(),
-  description: z.string().nullable().optional(),
-  logo: z.string().nullable().optional(),
+  description: z.string().nullish(),
+  logo: z.string().nullish(),
   name: z.string(),
   sdkType: z.enum(AiProviderSdkTypes).optional(),
   settings: AiProviderSettingsSchema.optional(),
@@ -331,7 +361,7 @@ export const UpdateAiProviderConfigSchema = z.object({
       enableResponseApi: z.boolean().optional(),
     })
     .optional(),
-  fetchOnClient: z.boolean().nullable().optional(),
+  fetchOnClient: z.boolean().nullish(),
   keyVaults: z
     .record(
       z.string(),

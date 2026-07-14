@@ -5,6 +5,8 @@ import isEqual from 'fast-deep-equal';
 import { MoreHorizontal } from 'lucide-react';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
+import urlJoin from 'url-join';
 
 import NavItem from '@/features/NavPanel/components/NavItem';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
@@ -19,20 +21,23 @@ import TopicItem from '../../List/Item';
 
 const FlatMode = memo(() => {
   const { t } = useTranslation('topic');
+  const navigate = useNavigate();
   const topicPageSize = useGlobalStore(systemStatusSelectors.topicPageSize);
   const topicSortBy = useUserStore(preferenceSelectors.topicSortBy);
+  const topicIncludeCompleted = useUserStore(preferenceSelectors.topicIncludeCompleted);
 
-  const [activeTopicId, activeThreadId, hasMore, isExpandingPageSize, openAllTopicsDrawer] =
-    useChatStore((s) => [
+  const [activeTopicId, activeThreadId, hasMore, isExpandingPageSize, activeAgentId] = useChatStore(
+    (s) => [
       s.activeTopicId,
       s.activeThreadId,
-      topicSelectors.hasMoreTopics(s),
+      topicSelectors.hasMoreTopicsForSidebar(s),
       topicSelectors.isExpandingPageSize(s),
-      s.openAllTopicsDrawer,
-    ]);
+      s.activeAgentId,
+    ],
+  );
 
   const activeTopicList = useChatStore(
-    topicSelectors.displayTopicsForSidebar(topicPageSize, topicSortBy),
+    topicSelectors.displayTopicsForSidebar(topicPageSize, topicSortBy, topicIncludeCompleted),
     isEqual,
   );
 
@@ -51,8 +56,12 @@ const FlatMode = memo(() => {
         />
       ))}
       {isExpandingPageSize && <SkeletonList rows={3} />}
-      {hasMore && !isExpandingPageSize && (
-        <NavItem icon={MoreHorizontal} title={t('loadMore')} onClick={openAllTopicsDrawer} />
+      {hasMore && !isExpandingPageSize && activeAgentId && (
+        <NavItem
+          icon={MoreHorizontal}
+          title={t('loadMore')}
+          onClick={() => navigate(urlJoin('/agent', activeAgentId, 'topics'))}
+        />
       )}
     </Flexbox>
   );

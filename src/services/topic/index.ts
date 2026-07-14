@@ -32,6 +32,10 @@ export class TopicService {
     return lambdaClient.topic.cloneTopic.mutate({ id, newTitle });
   };
 
+  batchMoveTopics = (topicIds: string[], targetAgentId: string) => {
+    return lambdaClient.topic.batchMoveTopics.mutate({ targetAgentId, topicIds });
+  };
+
   importTopic = (params: {
     agentId: string;
     data: string;
@@ -50,12 +54,14 @@ export class TopicService {
       includeTriggers: params.includeTriggers,
       isInbox: params.isInbox,
       pageSize: params.pageSize,
+      sortBy: params.sortBy,
       triggers: params.triggers,
+      withDetails: params.withDetails,
     }) as any;
   };
 
-  getAllTopics = (): Promise<ChatTopic[]> => {
-    return lambdaClient.topic.getAllTopics.query() as any;
+  queryTopics = (params?: { pageSize?: number; statuses?: string[] }): Promise<ChatTopic[]> => {
+    return lambdaClient.topic.queryTopics.query(params) as any;
   };
 
   countTopics = async (params?: {
@@ -72,8 +78,17 @@ export class TopicService {
     return lambdaClient.topic.rankTopics.query(limit);
   };
 
+  getMaxTaskDuration = async (): Promise<number> => {
+    return lambdaClient.topic.getMaxTaskDuration.query();
+  };
+
   getRecentTopics = async (limit?: number): Promise<RecentTopic[]> => {
     return lambdaClient.topic.recentTopics.query({ limit });
+  };
+
+  hasTopicFiles = async (ids: string[]): Promise<boolean> => {
+    const result = await lambdaClient.topic.hasTopicFiles.query({ ids });
+    return result.data.hasFiles;
   };
 
   searchTopics = (keywords: string, agentId?: string, groupId?: string): Promise<ChatTopic[]> => {
@@ -108,8 +123,8 @@ export class TopicService {
     return lambdaClient.topic.disableSharing.mutate({ topicId });
   };
 
-  removeTopic = (id: string) => {
-    return lambdaClient.topic.removeTopic.mutate({ id });
+  removeTopic = (id: string, removeFiles?: boolean) => {
+    return lambdaClient.topic.removeTopic.mutate({ id, removeFiles });
   };
 
   removeTopics = (sessionId: string) => {

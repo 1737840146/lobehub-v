@@ -9,6 +9,7 @@ import type {
   MessageMetadata,
   MessageToolCall,
   ModelReasoning,
+  ModelUsage,
 } from '../common';
 import {
   ChatImageItemSchema,
@@ -17,6 +18,7 @@ import {
   MessageMetadataSchema,
   MessageToolCallSchema,
   ModelReasoningSchema,
+  ModelUsageSchema,
 } from '../common';
 import type { UIChatMessage } from '../ui';
 
@@ -100,10 +102,16 @@ export interface UpdateMessageParams {
   provider?: string;
   reasoning?: ModelReasoning;
   role?: string;
-  search?: GroundingSearch;
+  search?: GroundingSearch | null;
   toolCalls?: MessageToolCall[];
   tools?: ChatToolPayload[] | null;
   traceId?: string;
+  /**
+   * Token usage + cost, promoted out of `metadata.usage` into the dedicated
+   * `usage` column. Writers may pass it top-level; the model also falls back to
+   * `metadata.usage` so existing callers keep populating the column.
+   */
+  usage?: ModelUsage;
 }
 
 export interface NewMessageQueryParams {
@@ -118,8 +126,8 @@ export interface NewMessageQueryParams {
 export const UpdateMessageParamsSchema = z
   .object({
     content: z.string().optional(),
-    editorData: z.record(z.any()).nullable().optional(),
-    error: ChatMessageErrorSchema.nullable().optional(),
+    editorData: z.record(z.string(), z.any()).nullish(),
+    error: ChatMessageErrorSchema.nullish(),
     imageList: z.array(ChatImageItemSchema).optional(),
     metadata: MessageMetadataSchema.optional(),
     model: z.string().optional(),
@@ -127,9 +135,10 @@ export const UpdateMessageParamsSchema = z
     provider: z.string().optional(),
     reasoning: ModelReasoningSchema.optional(),
     role: z.string().optional(),
-    search: GroundingSearchSchema.optional(),
+    search: GroundingSearchSchema.nullish(),
     toolCalls: z.array(MessageToolCallSchema).optional(),
-    tools: z.array(ChatToolPayloadSchema).nullable().optional(),
+    tools: z.array(ChatToolPayloadSchema).nullish(),
     traceId: z.string().optional(),
+    usage: ModelUsageSchema.optional(),
   })
   .passthrough();

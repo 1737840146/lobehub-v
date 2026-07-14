@@ -1,10 +1,11 @@
 'use client';
 
 import { Fragment, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import NavHeader from '@/features/NavHeader';
 import SettingContainer from '@/features/Setting/SettingContainer';
+import { useSettingsAnchorScroll } from '@/features/SettingsSearch/anchor';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { SettingsTabs } from '@/store/global/initialState';
 import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
 
@@ -25,11 +26,16 @@ interface SettingsContentProps {
 
 const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
-  const navigate = useNavigate();
+  const navigate = useWorkspaceAwareNavigate();
+
+  useSettingsAnchorScroll();
 
   useEffect(() => {
     if (activeTab && REDIRECT_MAP[activeTab]) {
-      navigate(`/settings/${REDIRECT_MAP[activeTab]}`, { replace: true });
+      // Personal-only redirect: legacy URL aliases (common, agent, tts, image,
+      // chat-appearance) map to personal-settings tabs. `escape: true` keeps the
+      // user in personal context even when a workspace happens to be active.
+      navigate(`/settings/${REDIRECT_MAP[activeTab]}`, { escape: true, replace: true });
     }
   }, [activeTab, navigate]);
 
@@ -67,10 +73,13 @@ const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
   return (
     <>
       {Object.keys(componentMap).map((tabKey) => {
-        const isProvider = tabKey === SettingsTabs.Provider;
+        const isFullWidth =
+          tabKey === SettingsTabs.Provider ||
+          tabKey === SettingsTabs.Skill ||
+          tabKey === SettingsTabs.Connector;
         if (activeTab !== tabKey) return null;
         const content = renderComponent(tabKey);
-        if (isProvider) return <Fragment key={tabKey}>{content}</Fragment>;
+        if (isFullWidth) return <Fragment key={tabKey}>{content}</Fragment>;
         return (
           <Fragment key={tabKey}>
             <NavHeader />

@@ -15,8 +15,13 @@ vi.mock('../auth/resolveToken', () => ({
   }),
 }));
 vi.mock('../settings', () => ({
+  addWorkspaceEnrollment: vi.fn(),
+  loadOrCreateConnectionId: vi.fn().mockReturnValue('test-connection-id'),
   loadSettings: vi.fn().mockReturnValue(null),
+  // Default: no persisted workspace shares, so runConnect skips the restore path.
+  loadWorkspaceEnrollments: vi.fn().mockReturnValue([]),
   normalizeUrl: vi.fn((url?: string) => (url ? url.replace(/\/$/, '') : undefined)),
+  removeWorkspaceEnrollment: vi.fn(),
   saveSettings: vi.fn(),
 }));
 
@@ -434,6 +439,25 @@ describe('connect command', () => {
     it('should warn if no daemon is running', async () => {
       const program = createProgram();
       await program.parseAsync(['node', 'test', 'connect', 'stop']);
+
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('No daemon'));
+    });
+  });
+
+  describe('disconnect (alias for connect stop)', () => {
+    it('should stop running daemon', async () => {
+      mockRunningPid = 12345;
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'disconnect']);
+
+      expect(stopDaemon).toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith(expect.stringContaining('Daemon stopped'));
+    });
+
+    it('should warn if no daemon is running', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'disconnect']);
 
       expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('No daemon'));
     });

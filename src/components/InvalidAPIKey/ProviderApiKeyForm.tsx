@@ -1,4 +1,5 @@
-import { Button, Icon } from '@lobehub/ui';
+import { Icon } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { Loader2Icon, Network } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { memo, use, useState } from 'react';
@@ -27,7 +28,7 @@ const ProviderApiKeyForm = memo<ProviderApiKeyFormProps>(
     const { t: errorT } = useTranslation('error');
     const [showProxy, setShow] = useState(false);
 
-    const { apiKey, baseURL, setConfig } = useApiKey(provider);
+    const { apiKey, baseURL, canManageProvider, setConfig } = useApiKey(provider);
     const { showOpenAIProxyUrl } = useServerConfigStore(featureFlagsSelectors);
     const providerName = useProviderName(provider);
     const { loading } = use(LoadingContext);
@@ -40,6 +41,7 @@ const ProviderApiKeyForm = memo<ProviderApiKeyFormProps>(
       >
         <FormPassword
           autoComplete={'new-password'}
+          disabled={!canManageProvider}
           placeholder={apiKeyPlaceholder || 'sk-***********************'}
           suffix={<div>{loading && <Icon spin icon={Loader2Icon} />}</div>}
           value={apiKey}
@@ -52,6 +54,7 @@ const ProviderApiKeyForm = memo<ProviderApiKeyFormProps>(
           showOpenAIProxyUrl &&
           (showProxy ? (
             <FormInput
+              disabled={!canManageProvider}
               placeholder={'https://api.openai.com/v1'}
               suffix={<div>{loading && <Icon spin icon={Loader2Icon} />}</div>}
               value={baseURL}
@@ -61,6 +64,7 @@ const ProviderApiKeyForm = memo<ProviderApiKeyFormProps>(
             />
           ) : (
             <Button
+              disabled={!canManageProvider}
               icon={<Icon icon={Network} />}
               type={'text'}
               onClick={() => {

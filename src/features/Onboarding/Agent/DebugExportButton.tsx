@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, copyToClipboard } from '@lobehub/ui';
+import { copyToClipboard } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
 import { LogsIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
@@ -17,7 +18,7 @@ interface DebugExportButtonContentProps {
 
 interface DebugExportButtonProps {
   agentId: string;
-  topicId: string;
+  topicId: string | undefined;
 }
 
 const DEBUG_EXPORT_FIELDS = {
