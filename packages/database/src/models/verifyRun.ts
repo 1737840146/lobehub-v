@@ -1,5 +1,10 @@
-import type { VerifyCheckItem, VerifyRunSource, VerifyRunStatus } from '@lobechat/types';
-import { and, desc, eq, ilike, isNull, lt, or, sql } from 'drizzle-orm';
+import type {
+  VerifyCheckItem,
+  VerifyRunDecisionDetail,
+  VerifyRunSource,
+  VerifyRunStatus,
+} from '@lobechat/types';
+import { and, asc, desc, eq, ilike, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { agentOperations } from '../schemas/agentOperations';
 import type { NewVerifyRun, VerifyRunItem } from '../schemas/verify';
@@ -85,7 +90,7 @@ export class VerifyRunModel {
    */
   private assertOperationOwned = async (operationId: string): Promise<void> => {
     const [op] = await this.db
-      .select({ id: agentOperations.id })
+      .select({ id: agentOperations.id, userId: agentOperations.userId })
       .from(agentOperations)
       .where(
         and(
@@ -99,6 +104,14 @@ export class VerifyRunModel {
       .limit(1);
     if (!op) {
       throw new Error(`Agent operation "${operationId}" not found in the current workspace`);
+    }
+    // Workspace visibility is not enough: the lazily-created run is stamped
+    // with the caller's userId and reserves the unique operation_id, which
+    // would block the operation's real owner from managing their own run.
+    if (op.userId !== this.userId) {
+      throw new Error(
+        `Agent operation "${operationId}" belongs to another member; only its creator can start a verify run`,
+      );
     }
   };
 
@@ -190,6 +203,54 @@ export class VerifyRunModel {
     const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
 
     return { items, nextCursor };
+  };
+
+  /** Every round chained onto an acceptance aggregate, in round order. */
+  listByAcceptance = async (acceptanceId: string): Promise<VerifyRunItem[]> => {
+    return this.db.query.verifyRuns.findMany({
+      orderBy: [asc(verifyRuns.roundIndex)],
+      where: and(eq(verifyRuns.acceptanceId, acceptanceId), this.ownership()),
+    });
+  };
+
+  /**
+   * Chain a run onto an acceptance as its next round. The round index is
+   * assigned inside the UPDATE from the chain's current max, so two concurrent
+   * attaches cannot read the same max; if they still collide, the
+   * `(acceptance_id, round_index)` unique index rejects the loser.
+   */
+  attachToAcceptance = async (runId: string, acceptanceId: string): Promise<VerifyRunItem> => {
+    const [run] = await this.db
+      .update(verifyRuns)
+      .set({
+        acceptanceId,
+        roundIndex: sql`(
+          SELECT COALESCE(MAX(${verifyRuns.roundIndex}), 0) + 1
+          FROM ${verifyRuns}
+          WHERE ${verifyRuns.acceptanceId} = ${acceptanceId}
+        )`,
+      })
+      .where(and(eq(verifyRuns.id, runId), this.ownership()))
+      .returning();
+
+    if (!run) throw new Error(`Verify run "${runId}" not found in the current workspace`);
+    return run;
+  };
+
+  /**
+   * Record the user's acceptance decision on THIS round (the human verdict that
+   * closes or re-opens the acceptance loop). Free-form verb by design — see the
+   * `user_decision` column comment.
+   */
+  setDecision = async (
+    runId: string,
+    userDecision: string,
+    decisionDetail?: VerifyRunDecisionDetail,
+  ): Promise<void> => {
+    await this.db
+      .update(verifyRuns)
+      .set({ decisionDetail, userDecision })
+      .where(and(eq(verifyRuns.id, runId), this.ownership()));
   };
 
   /** The verification session bound to an Agent Run, or undefined when none yet. */
@@ -285,7 +346,9 @@ export class VerifyRunModel {
 
   update = async (
     runId: string,
-    value: Partial<Pick<NewVerifyRun, 'context' | 'goal' | 'metadata' | 'scenario' | 'title'>>,
+    value: Partial<
+      Pick<NewVerifyRun, 'context' | 'goal' | 'metadata' | 'plan' | 'scenario' | 'title'>
+    >,
   ): Promise<VerifyRunItem | undefined> => {
     const [run] = await this.db
       .update(verifyRuns)

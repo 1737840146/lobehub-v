@@ -3,6 +3,15 @@
  * shape, Toulmin narrative, and rubric run-policy config. Kept here (not in the
  * DB schema) so every layer — schema, services, store, UI — depends on one
  * source of truth without reaching into the database package.
+ *
+ * The unions below are declared here, and their runtime counterparts (the `as
+ * const` arrays a schema or a `<Select>` iterates) live in
+ * `@lobechat/const/verify`. The duplication is deliberate: this package is
+ * replaced by a hand-written stub inside the isolated desktop workspace, so a
+ * runtime value exported from here is unreachable for members of that workspace
+ * (`@lobehub/cli`), while `@lobechat/types` must stay dependency-free of
+ * `@lobechat/const`. `packages/const/src/verify.test.ts` fails the type-check the
+ * moment the two sides drift apart.
  */
 
 /**
@@ -11,12 +20,10 @@
  * - agent:   spawn a sub agent_operations to investigate
  * - llm:     call generateObject and let an LLM judge produce a Toulmin verdict
  */
-export const verifierTypes = ['program', 'agent', 'llm'] as const;
-export type VerifierType = (typeof verifierTypes)[number];
+export type VerifierType = 'program' | 'agent' | 'llm';
 
 /** What to do when a check item fails. */
-export const verifyOnFailStrategies = ['manual', 'auto_repair'] as const;
-export type VerifyOnFailStrategy = (typeof verifyOnFailStrategies)[number];
+export type VerifyOnFailStrategy = 'manual' | 'auto_repair';
 
 /**
  * Lifecycle of a single check result.
@@ -24,61 +31,162 @@ export type VerifyOnFailStrategy = (typeof verifyOnFailStrategies)[number];
  *   delivery judgment. Kept distinct from `failed` so a broken verifier never
  *   reads as a rejected delivery and never seeds an auto-repair round.
  */
-export const verifyCheckResultStatuses = [
-  'pending',
-  'running',
-  'passed',
-  'failed',
-  'errored',
-  'skipped',
-] as const;
-export type VerifyCheckResultStatus = (typeof verifyCheckResultStatuses)[number];
+export type VerifyCheckResultStatus =
+  'pending' | 'running' | 'passed' | 'failed' | 'errored' | 'skipped';
 
 /** Toulmin Claim — the verifier's judgement. */
-export const verifyVerdicts = ['passed', 'failed', 'uncertain'] as const;
-export type VerifyVerdict = (typeof verifyVerdicts)[number];
+export type VerifyVerdict = 'passed' | 'failed' | 'uncertain';
 
 /** Human feedback on a result, feeding the data flywheel. */
-export const verifyUserDecisions = ['accepted', 'rejected', 'overridden'] as const;
-export type VerifyUserDecision = (typeof verifyUserDecisions)[number];
+export type VerifyUserDecision = 'accepted' | 'rejected' | 'overridden';
+
+// ============================================
+// Acceptance — business-level delivery acceptance aggregate
+// ============================================
 
 /**
- * Denormalized rollup of a verification session's pipeline state — mirrors the
+ * The product object being accepted. Kept polymorphic so the acceptance aggregate
+ * is not coupled to task-only workflows: a future run can accept a topic,
+ * document, artifact, release, etc. without another schema reshape.
+ */
+export type AcceptanceSubjectType = 'task' | 'topic' | 'document';
+
+/**
+ * Business-level acceptance state. Check-level and run-level verdicts stay in the
+ * verify vocabulary (`passed` / `failed`); the aggregate exposes the user's
+ * outcome language (`accepted` / `rejected`).
+ *
+ * `delivered`: verification settled (passed OR failed) and the aggregate now
+ * waits for the user's accept/reject — the human decision closes the lifecycle,
+ * the verifier's verdict is only a recommendation either way.
+ */
+export type AcceptanceStatus =
+  | 'pending'
+  | 'planned'
+  | 'verifying'
+  | 'repairing'
+  | 'delivered'
+  | 'accepted'
+  | 'rejected'
+  | 'errored';
+
+/**
+ * AI-generated visualization for an acceptance report (`acceptances.visual_render`).
+ * One jsonb bag (not a bare text column) so generation provenance and future
+ * knobs (theme, assets) never need a migration.
+ *
+ * The `html` payload is model-produced — viewers MUST render it inside a
+ * sandboxed iframe, never inject it into the host document.
+ */
+export interface AcceptanceVisualRender {
+  generatedAt?: string;
+  /** Producer of the visualization, e.g. a model id. */
+  generatedBy?: string;
+  /** Self-contained HTML document filled in by the AI. */
+  html: string;
+}
+
+/**
+ * Acceptance policy/config snapshot. The source may be a task's `config.verify`,
+ * a topic-level override, or a document acceptance rule, so it lives with the
+ * generic aggregate rather than only in task types.
+ */
+export interface AcceptanceConfig {
+  enabled?: boolean;
+  maxIterations?: number;
+  verifierAgentId?: string;
+  verifyCriteriaIds?: string[];
+  verifyRubricId?: string;
+}
+
+/** Generic acceptance extension bag for cross-subject state we have not modeled yet. */
+export interface AcceptanceMetadata {
+  [key: string]: unknown;
+}
+
+/**
+ * Denormalized rollup of a verification round's pipeline state — mirrors the
  * legacy `agent_operations.verify_status` set so the two stay interchangeable
  * while results/reports migrate from being operation-anchored to run-anchored.
+ *
+ * `errored`: at least one required check errored (verifier couldn't run) and none
+ * genuinely failed — verification is inconclusive, not a rejected delivery.
  */
-export const verifyRunStatuses = [
-  'unverified',
-  'planned',
-  'verifying',
-  'passed',
-  'failed',
-  // At least one required check errored (verifier couldn't run) and none
-  // genuinely failed — verification is inconclusive, not a rejected delivery.
-  'errored',
-  'repairing',
-  'delivered',
-] as const;
-export type VerifyRunStatus = (typeof verifyRunStatuses)[number];
+export type VerifyRunStatus =
+  | 'unverified'
+  | 'planned'
+  | 'verifying'
+  | 'passed'
+  | 'failed'
+  | 'errored'
+  | 'repairing'
+  | 'delivered';
 
 /**
- * What produced a verification session.
+ * What produced a verification round.
  * - agent:         verifying a real Agent Run (`verify_runs.operation_id` set)
- * - agent-testing: a standalone session ingested from the agent-testing harness
+ * - agent-testing: a standalone round ingested from the agent-testing harness
  *   (no Agent Run — `operation_id` is null)
  */
-export const verifyRunSources = ['agent', 'agent-testing'] as const;
-export type VerifyRunSource = (typeof verifyRunSources)[number];
+export type VerifyRunSource = 'agent' | 'agent-testing';
 
 /**
- * The kind of thing a verification session checks. Orthogonal to `source` (which
+ * The kind of thing a verification round checks. Orthogonal to `source` (which
  * records what *produced* the run): `scenario` drives how the report renders its
  * scope header and scenario-specific detail. Open-ended — new scenarios add a
  * value here plus their own {@link VerifyRunContext} shape.
  * - coding: verifying a software change (branch / commit / surfaces under test).
  */
-export const verifyRunScenarios = ['coding'] as const;
-export type VerifyRunScenario = (typeof verifyRunScenarios)[number];
+export type VerifyRunScenario = 'coding';
+
+/**
+ * The product surface a check was exercised on — *where* it ran, never *what
+ * kind* of test it was. `unit` / `backend` / `type-check` are test kinds and do
+ * not belong here; a backend change verified through the CLI has surface `cli`.
+ *
+ * A closed set on purpose: free-form surfaces drifted into 76 distinct values
+ * (long prose, runtime modes, tool names), which no viewer can render as a
+ * legible badge. Runtime detail ("packaged build", "CDP dev instance") belongs
+ * on the plan item's `method`, not here.
+ */
+export type VerifySurface = 'web' | 'desktop' | 'cli' | 'mobile' | 'bot';
+
+/** The medium of a captured evidence artifact. */
+export type VerifyEvidenceType =
+  'screenshot' | 'gif' | 'video' | 'text' | 'dom_snapshot' | 'transcript';
+
+/** Who / what captured an evidence artifact (provenance). */
+export type VerifyEvidenceCapturedBy = 'agent-browser' | 'cdp' | 'cli' | 'program' | 'llm_judge';
+
+/**
+ * Provenance of a user's acceptance decision on a verify round
+ * (`verify_runs.decision_detail`). One bag so the decision can carry richer
+ * evidence — a note, attachments, who and when — without new columns; the
+ * `verify_runs.user_decision` verb stays the queryable field.
+ */
+export interface VerifyRunDecisionDetail {
+  /** Free-form reason, e.g. the reject note that seeds the next repair round. */
+  comment?: string;
+  /** When the decision was made (ISO 8601). */
+  decidedAt?: string;
+  /** Who made the decision (user id) — set when it may differ from the run owner. */
+  decidedBy?: string;
+  /** Attachments backing the decision (annotated screenshots, etc.) — FKs to files. */
+  fileIds?: string[];
+}
+
+/**
+ * The LobeHub conversation an ingested report was authored in. Lets the report
+ * link back to (and later resume) the agent session that produced it.
+ */
+export interface VerifyRunOrigin {
+  /** The agent that ran the verification. */
+  agentId?: string;
+  /** The agent operation (one execution) that produced the report. */
+  operationId?: string;
+  /** The topic to reopen to continue from this report. */
+  topicId?: string;
+}
 
 /**
  * Coding-scenario scope: where the code under test came from and how it ran.
@@ -101,12 +209,10 @@ export interface VerifyCodingScope {
   commit?: string;
   /** Entry point / command exercised, e.g. "lh verify ingest-report". */
   entry?: string;
-  /** The focus / key risk of this round (free text). */
-  focus?: string;
   /** Associated pull request, when the verification run has one. */
   pullRequest?: VerifyCodingPullRequest;
-  /** Test surfaces exercised, e.g. ["cli", "web"]. */
-  surfaces?: string[];
+  /** Product surfaces the checks ran on. */
+  surfaces?: VerifySurface[];
   /** When the report was authored (ISO 8601) — distinct from the row's createdAt (ingest time). */
   testedAt?: string;
 }
@@ -159,9 +265,6 @@ export interface VerifyInteractionCost {
   waitSeconds: number;
 }
 
-/** Default cap on automatic repair rounds when a rubric doesn't override it. */
-export const DEFAULT_MAX_REPAIR_ROUNDS = 3;
-
 /**
  * Run-policy knobs for a rubric — applied to every run that mounts it. Lives in
  * one bag (not columns) so new policy switches can be added without a migration.
@@ -191,6 +294,17 @@ export interface VerifyRunMetadata {
    * time via {@link DEFAULT_MAX_REPAIR_ROUNDS} fallback.
    */
   maxRepairRounds?: number;
+  /**
+   * Where this report came from — the LobeHub conversation whose agent produced
+   * it. Set when the harness runs inside a LobeHub-spawned agent (the runtime
+   * echoes the ids into the child env; see {@link VerifyRunOrigin}).
+   *
+   * Deliberately *not* `verify_runs.operation_id`: that column means "this
+   * session verifies that Agent Run" and is uniquely indexed, so one agent
+   * publishing two reports would collide. Origin is the inverse relation — the
+   * run that *authored* the report — and is many-to-one.
+   */
+  origin?: VerifyRunOrigin;
 }
 
 /**
@@ -201,6 +315,12 @@ export interface VerifyRunMetadata {
  * `sourceRubricId` are provenance pointers only.
  */
 export interface VerifyCheckItem {
+  /**
+   * Grouping key for the acceptance union view (a page section / feature
+   * domain, authored by the harness that writes the plan). Free-form label;
+   * checks without one fall back to surface grouping.
+   */
+  category?: string;
   /** One-sentence summary of what this check verifies. */
   description?: string;
   /** The document holding the detailed judging instruction / rule body, if any. */
@@ -217,9 +337,44 @@ export interface VerifyCheckItem {
   sourceCriterionId?: string | null;
   /** Provenance: the rubric (group) this item came in through, or null. */
   sourceRubricId?: string | null;
+  /**
+   * Generation declaration: the older check-item ids THIS item replaces. The
+   * acceptance union folds the superseded items into this item's iteration
+   * timeline instead of listing semantically-dead checks side by side.
+   */
+  supersedes?: string[];
   title: string;
   verifierConfig: Record<string, unknown>;
   verifierType: VerifierType;
+}
+
+/**
+ * `verifierConfig` of a plan item authored by a harness before its run.
+ *
+ * Note what is NOT here: *how the item is judged* is `verifierType`
+ * (program / agent / llm), and *what artifact it must produce* is
+ * {@link RequiredEvidenceSpec} under `requiredEvidence` — both closed sets, and
+ * the latter is enforced (a missing required artifact fails the item through the
+ * executor's coverage gate). `method` and `expected` are the human-readable
+ * complement to those two, not a replacement: prose the author writes down
+ * *before* the run so a reader can weigh intent against outcome, and so a
+ * planned-but-never-executed item stays legible instead of vanishing.
+ */
+export interface VerifyAgentPlanConfig {
+  /** The observable outcome that would make this item pass. Prose. */
+  expected?: string;
+  /** How the item would be exercised (steps / command / probe). Prose. */
+  method?: string;
+  /** Evidence media this item must produce — gated, not decorative. */
+  requiredEvidence?: RequiredEvidenceSpec[];
+  /**
+   * The product surface THIS item was exercised on — the acceptance union view
+   * groups checks by it. Optional and per-item on purpose: the run-level
+   * `context.surfaces` records where the round ran as a whole, while one round
+   * routinely mixes web + cli + desktop checks. Same closed set as
+   * {@link VerifySurface}; a missing value renders ungrouped.
+   */
+  surface?: VerifySurface;
 }
 
 /**
@@ -241,27 +396,6 @@ export interface ToulminVerdict {
 // ============================================
 // Evidence — first-class artifacts a verifier produces (screenshots, logs, …)
 // ============================================
-
-/** The medium of a captured evidence artifact. */
-export const verifyEvidenceTypes = [
-  'screenshot',
-  'gif',
-  'video',
-  'text',
-  'dom_snapshot',
-  'transcript',
-] as const;
-export type VerifyEvidenceType = (typeof verifyEvidenceTypes)[number];
-
-/** Who / what captured an evidence artifact (provenance). */
-export const verifyEvidenceCapturedBy = [
-  'agent-browser',
-  'cdp',
-  'cli',
-  'program',
-  'llm_judge',
-] as const;
-export type VerifyEvidenceCapturedBy = (typeof verifyEvidenceCapturedBy)[number];
 
 /**
  * Declares that a criterion is evidence-driven: it cannot pass on the
@@ -313,8 +447,8 @@ export interface VerifyEvidence {
 
 /**
  * A delivery-verification report. A generated artifact (not a computed one):
- * `summary` / `content` are written by an LLM from the session's check results +
- * evidence. Tied to a verification session via `verifyRunId` (which itself
+ * `summary` / `content` are written by an LLM from the round's check results +
+ * evidence. Tied to a verification round via `verifyRunId` (which itself
  * optionally links back to an Agent Run).
  */
 export interface VerifyReport {
@@ -337,6 +471,6 @@ export interface VerifyReport {
   uncertainChecks?: number | null;
   /** Overall Claim, reusing the verdict vocabulary. */
   verdict?: VerifyVerdict | null;
-  /** The verification session this report summarizes. */
+  /** The verification round this report summarizes. */
   verifyRunId: string;
 }
